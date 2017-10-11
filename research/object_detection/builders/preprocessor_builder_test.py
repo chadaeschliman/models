@@ -67,6 +67,17 @@ class PreprocessorBuilderTest(tf.test.TestCase):
     self.assertEqual(function, preprocessor.random_horizontal_flip)
     self.assertEqual(args, {})
 
+  def test_build_random_vertical_flip(self):
+    preprocessor_text_proto = """
+    random_vertical_flip {
+    }
+    """
+    preprocessor_proto = preprocessor_pb2.PreprocessingStep()
+    text_format.Merge(preprocessor_text_proto, preprocessor_proto)
+    function, args = preprocessor_builder.build(preprocessor_proto)
+    self.assertEqual(function, preprocessor.random_vertical_flip)
+    self.assertEqual(args, {})
+
   def test_build_random_pixel_value_scale(self):
     preprocessor_text_proto = """
     random_pixel_value_scale {

@@ -28,6 +28,8 @@ if six.PY2:
 else:
   from unittest import mock # pylint: disable=g-import-not-at-top
 
+# number of times to test random flips
+NUM_RANDOM_TESTS = 10
 
 class PreprocessorTest(tf.test.TestCase):
 
@@ -78,7 +80,13 @@ class PreprocessorTest(tf.test.TestCase):
          [255.0, 0.0, 0.0]],
         [[255.0, 255.0, 0.0],
          [255.0, 255.0, 0.0],
-         [255.0, 255.0, 0.0]]])
+         [255.0, 255.0, 0.0]],
+        [[255.0, 255.0, 255.0],
+         [0.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0]],
+        [[255.0, 255.0, 255.0],
+         [255.0, 255.0, 255.0],
+         [0.0, 0.0, 0.0]]])
     return tf.constant(mask, dtype=tf.float32)
 
   def createTestKeypoints(self):
@@ -178,9 +186,30 @@ class PreprocessorTest(tf.test.TestCase):
     images = tf.concat([images_r, images_g, images_b], 3)
     return images
 
+  def expectedImagesAfterVerticalMirroring(self):
+    images_r = tf.constant([[[0.5, 0.5, 0, 0], [-1, 0, 0, 0],
+                             [-1, -1, 0, 0], [0, 0, 0, 0]]],
+                           dtype=tf.float32)
+    images_r = tf.expand_dims(images_r, 3)
+    images_g = tf.constant([[[0.5, 0.5, 0, 0.5], [-1, 0, 0.5, 0.5],
+                             [-1, -1, 0, 0], [-1, -1, 0, 0]]],
+                           dtype=tf.float32)
+    images_g = tf.expand_dims(images_g, 3)
+    images_b = tf.constant([[[0.5, 0.5, 0.5, 0], [-1, 0, 0, -1],
+                             [-1, -1, 0, 0.5], [0, 0, 0.5, -1]]],
+                           dtype=tf.float32)
+    images_b = tf.expand_dims(images_b, 3)
+    images = tf.concat([images_r, images_g, images_b], 3)
+    return images
+
   def expectedBoxesAfterMirroring(self):
     boxes = tf.constant([[0.0, 0.0, 0.75, 0.75], [0.25, 0.0, 0.75, 0.5]],
                         dtype=tf.float32)
+    return boxes
+
+  def expectedBoxesAfterVerticalMirroring(self):
+    boxes = tf.constant(
+        [[0.25, 0.25, 1.0, 1.0], [0.25, 0.5, 0.75, 1.0]], dtype=tf.float32)
     return boxes
 
   def expectedBoxesAfterXY(self):
@@ -195,7 +224,29 @@ class PreprocessorTest(tf.test.TestCase):
          [0.0, 0.0, 255.0]],
         [[0.0, 255.0, 255.0],
          [0.0, 255.0, 255.0],
-         [0.0, 255.0, 255.0]]])
+         [0.0, 255.0, 255.0]],
+        [[255.0, 255.0, 255.0],
+         [0.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0]],
+        [[255.0, 255.0, 255.0],
+         [255.0, 255.0, 255.0],
+         [0.0, 0.0, 0.0]]])
+    return tf.constant(mask, dtype=tf.float32)
+
+  def expectedMasksAfterVerticalMirroring(self):
+    mask = np.array([
+        [[255.0, 0.0, 0.0],
+         [255.0, 0.0, 0.0],
+         [255.0, 0.0, 0.0]],
+        [[255.0, 255.0, 0.0],
+         [255.0, 255.0, 0.0],
+         [255.0, 255.0, 0.0]],
+        [[0.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0],
+         [255.0, 255.0, 255.0]],
+        [[0.0, 0.0, 0.0],
+         [255.0, 255.0, 255.0],
+         [255.0, 255.0, 255.0]]])
     return tf.constant(mask, dtype=tf.float32)
 
   def expectedLabelScoresAfterThresholding(self):
@@ -326,30 +377,34 @@ class PreprocessorTest(tf.test.TestCase):
       self.assertAllClose(
           retained_label_scores_, expected_retained_label_scores_)
 
-  def testRandomFlipBoxes(self):
+  def testFlipBoxes(self):
     boxes = self.createTestBoxes()
-
-    # Case where the boxes are flipped.
-    boxes_expected1 = self.expectedBoxesAfterMirroring()
-
-    # Case where the boxes are not flipped.
-    boxes_expected2 = boxes
-
-    # After elementwise multiplication, the result should be all-zero since one
-    # of them is all-zero.
-    boxes_diff = tf.multiply(
-        tf.squared_difference(boxes, boxes_expected1),
-        tf.squared_difference(boxes, boxes_expected2))
-    expected_result = tf.zeros_like(boxes_diff)
-
+    flipped_boxes = preprocessor.flip_boxes(boxes)
+    expected_boxes = self.expectedBoxesAfterMirroring()
     with self.test_session() as sess:
-      (boxes_diff, expected_result) = sess.run([boxes_diff, expected_result])
-      self.assertAllEqual(boxes_diff, expected_result)
+      flipped_boxes, expected_boxes = sess.run([flipped_boxes, expected_boxes])
+      self.assertAllEqual(flipped_boxes, expected_boxes)
+
+  def testVerticalFlipBoxes(self):
+    boxes = self.createTestBoxes()
+    flipped_boxes = preprocessor.vflip_boxes(boxes)
+    expected_boxes = self.expectedBoxesAfterVerticalMirroring()
+    with self.test_session() as sess:
+      flipped_boxes, expected_boxes = sess.run([flipped_boxes, expected_boxes])
+      self.assertAllEqual(flipped_boxes, expected_boxes)
 
   def testFlipMasks(self):
     test_mask = self.createTestMasks()
-    flipped_mask = preprocessor._flip_masks(test_mask)
+    flipped_mask = preprocessor._hflip_masks(test_mask)
     expected_mask = self.expectedMasksAfterMirroring()
+    with self.test_session() as sess:
+      flipped_mask, expected_mask = sess.run([flipped_mask, expected_mask])
+      self.assertAllEqual(flipped_mask.flatten(), expected_mask.flatten())
+
+  def testVerticalFlipMasks(self):
+    test_mask = self.createTestMasks()
+    flipped_mask = preprocessor._vflip_masks(test_mask)
+    expected_mask = self.expectedMasksAfterVerticalMirroring()
     with self.test_session() as sess:
       flipped_mask, expected_mask = sess.run([flipped_mask, expected_mask])
       self.assertAllEqual(flipped_mask.flatten(), expected_mask.flatten())
@@ -378,12 +433,45 @@ class PreprocessorTest(tf.test.TestCase):
     images_diff = tf.multiply(images_diff1, images_diff2)
     images_diff_expected = tf.zeros_like(images_diff)
 
-    with self.test_session() as sess:
-      (images_diff_, images_diff_expected_, boxes_diff_,
-       boxes_diff_expected_) = sess.run([images_diff, images_diff_expected,
-                                         boxes_diff, boxes_diff_expected])
-      self.assertAllClose(boxes_diff_, boxes_diff_expected_)
-      self.assertAllClose(images_diff_, images_diff_expected_)
+    for i in xrange(NUM_RANDOM_TESTS):
+        with self.test_session() as sess:
+          (images_diff_, images_diff_expected_, boxes_diff_,
+           boxes_diff_expected_) = sess.run([images_diff, images_diff_expected,
+                                             boxes_diff, boxes_diff_expected])
+          self.assertAllClose(boxes_diff_, boxes_diff_expected_)
+          self.assertAllClose(images_diff_, images_diff_expected_)
+
+  def testRandomVerticalFlip(self):
+    preprocess_options = [(preprocessor.random_vertical_flip, {})]
+    images = self.expectedImagesAfterNormalization()
+    boxes = self.createTestBoxes()
+    tensor_dict = {fields.InputDataFields.image: images,
+                   fields.InputDataFields.groundtruth_boxes: boxes}
+    images_expected1 = self.expectedImagesAfterVerticalMirroring()
+    boxes_expected1 = self.expectedBoxesAfterVerticalMirroring()
+    images_expected2 = images
+    boxes_expected2 = boxes
+    tensor_dict = preprocessor.preprocess(tensor_dict, preprocess_options)
+    images = tensor_dict[fields.InputDataFields.image]
+    boxes = tensor_dict[fields.InputDataFields.groundtruth_boxes]
+
+    boxes_diff1 = tf.squared_difference(boxes, boxes_expected1)
+    boxes_diff2 = tf.squared_difference(boxes, boxes_expected2)
+    boxes_diff = tf.multiply(boxes_diff1, boxes_diff2)
+    boxes_diff_expected = tf.zeros_like(boxes_diff)
+
+    images_diff1 = tf.squared_difference(images, images_expected1)
+    images_diff2 = tf.squared_difference(images, images_expected2)
+    images_diff = tf.multiply(images_diff1, images_diff2)
+    images_diff_expected = tf.zeros_like(images_diff)
+
+    for i in xrange(NUM_RANDOM_TESTS):
+        with self.test_session() as sess:
+          (images_diff_, images_diff_expected_, boxes_diff_,
+           boxes_diff_expected_) = sess.run([images_diff, images_diff_expected,
+                                             boxes_diff, boxes_diff_expected])
+          self.assertAllClose(boxes_diff_, boxes_diff_expected_)
+          self.assertAllClose(images_diff_, images_diff_expected_)
 
   def testRunRandomHorizontalFlipWithMaskAndKeypoints(self):
     preprocess_options = [(preprocessor.random_horizontal_flip, {})]
@@ -402,6 +490,37 @@ class PreprocessorTest(tf.test.TestCase):
     }
     preprocess_options = [
         (preprocessor.random_horizontal_flip,
+         {'keypoint_flip_permutation': keypoint_flip_permutation})]
+    preprocessor_arg_map = preprocessor.get_default_func_arg_map(
+        include_instance_masks=True, include_keypoints=True)
+    tensor_dict = preprocessor.preprocess(
+        tensor_dict, preprocess_options, func_arg_map=preprocessor_arg_map)
+    boxes = tensor_dict[fields.InputDataFields.groundtruth_boxes]
+    masks = tensor_dict[fields.InputDataFields.groundtruth_instance_masks]
+    keypoints = tensor_dict[fields.InputDataFields.groundtruth_keypoints]
+    with self.test_session() as sess:
+      boxes, masks, keypoints = sess.run([boxes, masks, keypoints])
+      self.assertTrue(boxes is not None)
+      self.assertTrue(masks is not None)
+      self.assertTrue(keypoints is not None)
+
+  def testRunRandomVerticalFlipWithMaskAndKeypoints(self):
+    preprocess_options = [(preprocessor.random_vertical_flip, {})]
+    image_height = 3
+    image_width = 3
+    images = tf.random_uniform([1, image_height, image_width, 3])
+    boxes = self.createTestBoxes()
+    masks = self.createTestMasks()
+    keypoints = self.createTestKeypoints()
+    keypoint_flip_permutation = self.createKeypointFlipPermutation()
+    tensor_dict = {
+        fields.InputDataFields.image: images,
+        fields.InputDataFields.groundtruth_boxes: boxes,
+        fields.InputDataFields.groundtruth_instance_masks: masks,
+        fields.InputDataFields.groundtruth_keypoints: keypoints
+    }
+    preprocess_options = [
+        (preprocessor.random_vertical_flip,
          {'keypoint_flip_permutation': keypoint_flip_permutation})]
     preprocessor_arg_map = preprocessor.get_default_func_arg_map(
         include_instance_masks=True, include_keypoints=True)
